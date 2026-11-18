@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "LCU Biometric Attendance",
+    "slug": "lcu-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow LCU to access camera for facial verification attendance."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow LCU to record campus proximity for attendance."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}
