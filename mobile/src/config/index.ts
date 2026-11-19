@@ -2,9 +2,11 @@ export const CONFIG = {
   // Configurable face similarity baseline (experimental 0.88)
   DEFAULT_SIMILARITY_THRESHOLD: 0.88,
 
-  // Backend API URL
-  // Default to 10.0.2.2 for Android emulator; for physical Android devices set to workstation LAN IP (e.g. http://192.168.1.100:3000)
-  API_BASE_URL: "http://10.0.2.2:3000",
+  // Backend API URL:
+  // - Physical Android device over Wi-Fi: use your machine's Wi-Fi LAN IP (e.g. http://192.168.0.7:3000)
+  // - Android Emulator: use http://10.0.2.2:3000
+  // - With USB and `adb reverse tcp:3000 tcp:3000`: use http://localhost:3000
+  API_BASE_URL: "http://192.168.0.7:3000",
 
   // Face Detection Quality Gates (Google ML Kit)
   FACE_VALIDATION: {
