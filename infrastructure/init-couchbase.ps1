@@ -74,4 +74,9 @@ foreach ($col in $collections) {
     Invoke-RestMethod -Uri "http://${CouchbaseHost}:8093/query/service" -Method Post -Headers $headers -Body $body -ErrorAction SilentlyContinue | Out-Null
 }
 
+# 9. Create secondary index for efficient user attendance history queries
+Write-Host "Creating secondary index 'idx_att_user_time' on attendance collection..." -ForegroundColor Cyan
+$secBody = @{ statement = "CREATE INDEX idx_att_user_time IF NOT EXISTS ON `${BucketName}`.`${ScopeName}`.`attendance`(userId, serverTimestamp DESC);" }
+Invoke-RestMethod -Uri "http://${CouchbaseHost}:8093/query/service" -Method Post -Headers $headers -Body $secBody -ErrorAction SilentlyContinue | Out-Null
+
 Write-Host "Couchbase initialization successfully completed!" -ForegroundColor Green

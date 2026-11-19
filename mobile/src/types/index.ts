@@ -25,18 +25,32 @@ export interface AttendanceRecord {
   verifiedOnDevice: boolean;
 }
 
+export interface FaceBoundingBox {
+  originX: number;
+  originY: number;
+  width: number;
+  height: number;
+}
+
 export interface FaceValidationResult {
   isValid: boolean;
-  error?: string;
-  boundingBox?: {
-    originX: number;
-    originY: number;
-    width: number;
-    height: number;
+  reason?: string;
+  imageUri?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  boundingBox?: FaceBoundingBox;
+  angles?: {
+    pitch: number;
+    yaw: number;
+    roll: number;
   };
-  roll?: number;
-  yaw?: number;
-  pitch?: number;
+  eyesOpen?: {
+    left: number;
+    right: number;
+  };
+  metrics?: {
+    areaRatio: number;
+  };
 }
 
 export type ActiveScreen = "home" | "register" | "enroll" | "verify" | "history";

@@ -2,7 +2,9 @@ import React, { useState, useEffect } from "react";
 import { ScreenContainer } from "./src/components/ScreenContainer";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { RegisterScreen } from "./src/screens/RegisterScreen";
-import { EnrollmentScreen, VerificationScreen, HistoryScreen } from "./src/screens/PlaceholderScreens";
+import { EnrollmentScreen } from "./src/screens/EnrollmentScreen";
+import { VerificationScreen } from "./src/screens/VerificationScreen";
+import { HistoryScreen } from "./src/screens/PlaceholderScreens";
 import { UserProfile, ActiveScreen } from "./src/types";
 import { storageService } from "./src/services/storage";
 
@@ -44,14 +46,20 @@ export default function App() {
       {activeScreen === "enroll" && (
         <EnrollmentScreen
           user={user}
-          onBack={() => setActiveScreen("home")}
+          onBack={() => {
+            loadUser();
+            setActiveScreen("home");
+          }}
         />
       )}
 
       {activeScreen === "verify" && (
         <VerificationScreen
           user={user}
-          onBack={() => setActiveScreen("home")}
+          onBack={() => {
+            loadUser();
+            setActiveScreen("home");
+          }}
         />
       )}
 

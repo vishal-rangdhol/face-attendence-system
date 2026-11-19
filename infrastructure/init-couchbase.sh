@@ -63,4 +63,9 @@ for col in users biometrics attendance; do
         -d "statement=CREATE PRIMARY INDEX IF NOT EXISTS ON \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`${col}\`;" || true
 done
 
+# 9. Create secondary index for efficient user attendance history queries
+echo "Creating secondary index 'idx_att_user_time' on attendance collection..."
+curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" -X POST "http://${COUCHBASE_HOST}:8093/query/service" \
+    -d "statement=CREATE INDEX idx_att_user_time IF NOT EXISTS ON \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`attendance\`(userId, serverTimestamp DESC);" || true
+
 echo "Couchbase initialization successfully completed!"
