@@ -4,8 +4,8 @@ node_modules/
 .pnp.js
 
 # Agent environment plugins & skills
-plugins/
-skills/
+/plugins/
+/skills/
 
 # Production builds
 dist/
