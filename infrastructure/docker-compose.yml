@@ -1,6 +1,6 @@
 services:
   couchbase:
-    image: couchbase/server:community-7.6.2
+    image: couchbase:enterprise-7.6.2
     container_name: lcu_couchbase_server
     restart: unless-stopped
     ports:

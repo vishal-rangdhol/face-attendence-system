@@ -4,7 +4,7 @@ This directory contains the Docker Compose environment and initialization script
 
 ## Architecture & Configuration
 - **Container Name:** `lcu_couchbase_server`
-- **Image:** `couchbase/server:community-7.6.2`
+- **Image:** `couchbase:enterprise-7.6.2` (Enterprise Edition)
 - **Web UI & REST API Port:** `8091`
 - **N1QL Query REST API Port:** `8093`
 - **Data (KV) Port:** `11210`
