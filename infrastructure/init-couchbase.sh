@@ -2,70 +2,56 @@
 set -e
 
 COUCHBASE_HOST="${COUCHBASE_HOST:-localhost}"
-ADMIN_USER="${COUCHBASE_USER:-Administrator}"
-ADMIN_PASS="${COUCHBASE_PASS:-password}"
+CLUSTER_ADMIN="${COUCHBASE_ADMIN:-Administrator}"
+CLUSTER_PASS="${COUCHBASE_PASS:-Welcome@123}"
+APP_USER="${APP_USER:-attendance_backend}"
+APP_PASS="${APP_PASS:-Attendance@2026!}"
 BUCKET_NAME="attendance_system"
 SCOPE_NAME="app"
 
-echo "Waiting for Couchbase Server at http://${COUCHBASE_HOST}:8091..."
+echo "Connecting to existing Couchbase Server at http://${COUCHBASE_HOST}:8091..."
 until curl -s "http://${COUCHBASE_HOST}:8091/ui/index.html" > /dev/null; do
-    echo "Couchbase is starting up, waiting 5 seconds..."
-    sleep 5
+    echo "Waiting for Couchbase Server..."
+    sleep 3
 done
 
-echo "Couchbase web UI is online. Initializing cluster nodes and credentials..."
-# 1. Initialize cluster node settings
-curl -s -X POST "http://${COUCHBASE_HOST}:8091/nodes/self/controller/settings" \
-    -d "path=%2Fopt%2Fcouchbase%2Fvar%2Flib%2Fcouchbase%2Fdata&index_path=%2Fopt%2Fcouchbase%2Fvar%2Flib%2Fcouchbase%2Fdata" || true
-
-# 2. Setup services (kv, n1ql, index)
-curl -s -X POST "http://${COUCHBASE_HOST}:8091/node/controller/setupServices" \
-    -d "services=kv%2Cn1ql%2Cindex" || true
-
-# 3. Setup memory quotas
-curl -s -X POST "http://${COUCHBASE_HOST}:8091/pools/default" \
-    -d "memoryQuota=300&indexMemoryQuota=300" || true
-
-# 4. Setup administrator credentials
-curl -s -X POST "http://${COUCHBASE_HOST}:8091/settings/web" \
-    -d "username=${ADMIN_USER}&password=${ADMIN_PASS}&port=8091" || true
-
-echo "Waiting 5 seconds for cluster initialization..."
-sleep 5
-
-# 5. Create bucket
-echo "Creating bucket '${BUCKET_NAME}'..."
-curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" -X POST "http://${COUCHBASE_HOST}:8091/pools/default/buckets" \
+echo "Ensuring isolated bucket '${BUCKET_NAME}' exists..."
+curl -s -u "${CLUSTER_ADMIN}:${CLUSTER_PASS}" -X POST "http://${COUCHBASE_HOST}:8091/pools/default/buckets" \
     -d "name=${BUCKET_NAME}&bucketType=couchbase&ramQuota=256&authType=none" || true
 
-echo "Waiting 5 seconds for bucket '${BUCKET_NAME}' to become ready..."
-sleep 5
+sleep 3
 
-# 6. Create scope
-echo "Creating scope '${SCOPE_NAME}'..."
-curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" -X POST "http://${COUCHBASE_HOST}:8091/pools/default/buckets/${BUCKET_NAME}/scopes" \
+echo "Ensuring scope '${SCOPE_NAME}' exists..."
+curl -s -u "${CLUSTER_ADMIN}:${CLUSTER_PASS}" -X POST "http://${COUCHBASE_HOST}:8091/pools/default/buckets/${BUCKET_NAME}/scopes" \
     -d "name=${SCOPE_NAME}" || true
 
-# 7. Create collections
+sleep 2
+
 for col in users biometrics attendance; do
-    echo "Creating collection '${col}' in scope '${SCOPE_NAME}'..."
-    curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" -X POST "http://${COUCHBASE_HOST}:8091/pools/default/buckets/${BUCKET_NAME}/scopes/${SCOPE_NAME}/collections" \
+    echo "Ensuring collection '${col}' exists in scope '${SCOPE_NAME}'..."
+    curl -s -u "${CLUSTER_ADMIN}:${CLUSTER_PASS}" -X POST "http://${COUCHBASE_HOST}:8091/pools/default/buckets/${BUCKET_NAME}/scopes/${SCOPE_NAME}/collections" \
         -d "name=${col}" || true
 done
 
-echo "Waiting 3 seconds before creating primary indexes..."
-sleep 3
+sleep 2
 
-# 8. Create primary indexes on each collection for N1QL queries
+echo "Configuring isolated RBAC user '${APP_USER}'..."
+ROLES="data_reader[${BUCKET_NAME}],data_writer[${BUCKET_NAME}],query_select[${BUCKET_NAME}],query_insert[${BUCKET_NAME}],query_update[${BUCKET_NAME}],query_delete[${BUCKET_NAME}],query_manage_index[${BUCKET_NAME}]"
+curl -s -u "${CLUSTER_ADMIN}:${CLUSTER_PASS}" -X PUT "http://${COUCHBASE_HOST}:8091/settings/rbac/users/local/${APP_USER}" \
+    -d "name=Attendance%20System%20Backend&roles=${ROLES}&password=${APP_PASS}" || true
+
+sleep 2
+
 for col in users biometrics attendance; do
-    echo "Creating primary index for collection '${col}'..."
-    curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" -X POST "http://${COUCHBASE_HOST}:8093/query/service" \
-        -d "statement=CREATE PRIMARY INDEX IF NOT EXISTS ON \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`${col}\`;" || true
+    echo "Ensuring primary index exists for '${col}'..."
+    curl -s -u "${APP_USER}:${APP_PASS}" -X POST "http://${COUCHBASE_HOST}:8093/query/service" \
+        -H "Content-Type: application/json" \
+        -d "{\"statement\":\"CREATE PRIMARY INDEX IF NOT EXISTS ON \\\`${BUCKET_NAME}\\\`.\\\`${SCOPE_NAME}\\\`.\\\`${col}\\\`;\"}" || true
 done
 
-# 9. Create secondary index for efficient user attendance history queries
-echo "Creating secondary index 'idx_att_user_time' on attendance collection..."
-curl -s -u "${ADMIN_USER}:${ADMIN_PASS}" -X POST "http://${COUCHBASE_HOST}:8093/query/service" \
-    -d "statement=CREATE INDEX idx_att_user_time IF NOT EXISTS ON \`${BUCKET_NAME}\`.\`${SCOPE_NAME}\`.\`attendance\`(userId, serverTimestamp DESC);" || true
+echo "Ensuring secondary index 'idx_att_user_time' exists..."
+curl -s -u "${APP_USER}:${APP_PASS}" -X POST "http://${COUCHBASE_HOST}:8093/query/service" \
+    -H "Content-Type: application/json" \
+    -d "{\"statement\":\"CREATE INDEX idx_att_user_time IF NOT EXISTS ON \\\`${BUCKET_NAME}\\\`.\\\`${SCOPE_NAME}\\\`.\\\`attendance\\\`(userId, serverTimestamp DESC);\"}" || true
 
-echo "Couchbase initialization successfully completed!"
+echo "Attendance database provisioning successfully completed!"

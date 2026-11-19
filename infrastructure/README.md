@@ -1,35 +1,39 @@
-# Infrastructure: Couchbase Server Setup
+# Infrastructure: Couchbase Server Configuration
 
-This directory contains the Docker Compose environment and initialization scripts for running a standalone Couchbase Server instance for the Personal Face Recognition Attendance System.
+This directory contains the configuration and provisioning scripts for the Standalone Personal Face Recognition Attendance System.
 
-## Architecture & Configuration
-- **Container Name:** `lcu_couchbase_server`
-- **Image:** `couchbase:enterprise-7.6.2` (Enterprise Edition)
-- **Web UI & REST API Port:** `8091`
-- **N1QL Query REST API Port:** `8093`
-- **Data (KV) Port:** `11210`
-- **Default Credentials:**
-  - Username: `Administrator`
-  - Password: `password`
-- **Bucket:** `attendance_system`
-- **Scope:** `app`
-- **Collections:**
-  - `users`: User registration and profile details
-  - `biometrics`: 128-D face embedding vectors and consent records
-  - `attendance`: Date-partitioned attendance records
+## Architecture & Container Re-use
+Per infrastructure requirements, the attendance project **reuses the existing Couchbase Server Enterprise instance** (`lcu-couchbase`) already running on your machine for the LET'S CATCH UP project, rather than running a redundant second container.
 
-## Starting Couchbase
+### Complete Logical Isolation from LCU:
+- **Dedicated Bucket:** `attendance_system` (256 MB RAM quota)
+- **Dedicated Scope:** `app`
+- **Dedicated Collections:** `users`, `biometrics`, `attendance`
+- **Dedicated RBAC User:** `attendance_backend` (password: `Attendance@2026!`)
+- **Strict Role Boundaries:** The `attendance_backend` user only possesses data and query privileges on `attendance_system`. It has **zero access to the `lcu-kcs-dev` bucket**.
 
-```bash
-# 1. Start Couchbase in the background
-docker compose up -d
+## Provisioning / Verification
 
-# 2. Run initialization script (Linux / macOS)
-chmod +x init-couchbase.sh
-./init-couchbase.sh
+Ensure the `lcu-couchbase` Docker container is running, then run the idempotent setup script:
 
-# Or on Windows PowerShell:
+```powershell
+# Windows PowerShell
+cd V:\lcu_face_attendence\infrastructure
 .\init-couchbase.ps1
+
+# Or on Linux / macOS:
+./init-couchbase.sh
 ```
 
-Once initialized, you can log in to `http://localhost:8091` to monitor queries, documents, and bucket health.
+## Backend Environment Configuration (`backend/.env`)
+```env
+PORT=3000
+COUCHBASE_HOST=localhost
+COUCHBASE_QUERY_PORT=8093
+COUCHBASE_ADMIN_PORT=8091
+COUCHBASE_USER=attendance_backend
+COUCHBASE_PASS=Attendance@2026!
+COUCHBASE_BUCKET=attendance_system
+COUCHBASE_SCOPE=app
+DEFAULT_SIMILARITY_THRESHOLD=0.88
+```

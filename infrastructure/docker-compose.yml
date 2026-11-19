@@ -1,24 +1,5 @@
-services:
-  couchbase:
-    image: couchbase:enterprise-7.6.2
-    container_name: lcu_couchbase_server
-    restart: unless-stopped
-    ports:
-      - "8091-8096:8091-8096"
-      - "11210:11210"
-    environment:
-      - CLUSTER_NAME=attendance_cluster
-      - COUCHBASE_ADMINISTRATOR_USERNAME=Administrator
-      - COUCHBASE_ADMINISTRATOR_PASSWORD=password
-    volumes:
-      - couchbase_data:/opt/couchbase/var
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8091/ui/index.html"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-
-volumes:
-  couchbase_data:
-    driver: local
+# NOTE: Standalone Couchbase container is disabled per infrastructure update.
+# The project reuses the existing Couchbase Server instance ('lcu-couchbase')
+# running on localhost:8091/8093 with a logically isolated bucket 'attendance_system'.
+#
+# Do NOT run 'docker compose up' in this directory.

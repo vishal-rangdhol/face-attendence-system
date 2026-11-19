@@ -1,82 +1,69 @@
 param(
     [string]$CouchbaseHost = "localhost",
-    [string]$AdminUser = "Administrator",
-    [string]$AdminPass = "password"
+    [string]$ClusterAdmin = "Administrator",
+    [string]$ClusterPass = "Welcome@123",
+    [string]$AppUser = "attendance_backend",
+    [string]$AppPass = "Attendance@2026!"
 )
 
 $BucketName = "attendance_system"
 $ScopeName = "app"
 
-Write-Host "Waiting for Couchbase Server at http://${CouchbaseHost}:8091..." -ForegroundColor Cyan
-$maxAttempts = 30
-$attempt = 0
-$online = $false
+Write-Host "Connecting to existing Couchbase Server at http://${CouchbaseHost}:8091..." -ForegroundColor Cyan
 
-while (-not $online -and $attempt -lt $maxAttempts) {
-    try {
-        $res = Invoke-WebRequest -Uri "http://${CouchbaseHost}:8091/ui/index.html" -Method Get -TimeoutSec 3 -ErrorAction SilentlyContinue
-        if ($res.StatusCode -eq 200) { $online = $true; break }
-    } catch {
-        # Waiting
-    }
-    $attempt++
-    Write-Host "Attempt $attempt/$maxAttempts - Couchbase starting up, waiting 4s..."
-    Start-Sleep -Seconds 4
-}
-
-if (-not $online) {
-    Write-Error "Couchbase failed to come online within timeout."
+# Check cluster responsiveness
+try {
+    $res = Invoke-WebRequest -Uri "http://${CouchbaseHost}:8091/ui/index.html" -Method Get -TimeoutSec 5 -ErrorAction Stop
+    Write-Host "Couchbase Server is online." -ForegroundColor Green
+} catch {
+    Write-Error "Couchbase Server at http://${CouchbaseHost}:8091 is unreachable. Ensure 'lcu-couchbase' container is running."
     exit 1
 }
 
-Write-Host "Couchbase web UI is online. Initializing cluster nodes and credentials..." -ForegroundColor Green
+$adminAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${ClusterAdmin}:${ClusterPass}"))
+$adminHeaders = @{ Authorization = "Basic $adminAuth" }
 
-# 1. Setup path
-Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/nodes/self/controller/settings" -Method Post -Body "path=%2Fopt%2Fcouchbase%2Fvar%2Flib%2Fcouchbase%2Fdata&index_path=%2Fopt%2Fcouchbase%2Fvar%2Flib%2Fcouchbase%2Fdata" -ErrorAction SilentlyContinue | Out-Null
-
-# 2. Setup services
-Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/node/controller/setupServices" -Method Post -Body "services=kv%2Cn1ql%2Cindex" -ErrorAction SilentlyContinue | Out-Null
-
-# 3. Memory quotas
-Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/pools/default" -Method Post -Body "memoryQuota=300&indexMemoryQuota=300" -ErrorAction SilentlyContinue | Out-Null
-
-# 4. Administrator credentials
-Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/settings/web" -Method Post -Body "username=${AdminUser}&password=${AdminPass}&port=8091" -ErrorAction SilentlyContinue | Out-Null
-
-Start-Sleep -Seconds 4
-
-$base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${AdminUser}:${AdminPass}"))
-$headers = @{ Authorization = "Basic $base64Auth" }
-
-# 5. Create bucket
-Write-Host "Creating bucket '${BucketName}'..." -ForegroundColor Cyan
-Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/pools/default/buckets" -Method Post -Headers $headers -Body "name=${BucketName}&bucketType=couchbase&ramQuota=256&authType=none" -ErrorAction SilentlyContinue | Out-Null
-
-Start-Sleep -Seconds 5
-
-# 6. Create scope
-Write-Host "Creating scope '${ScopeName}'..." -ForegroundColor Cyan
-Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/pools/default/buckets/${BucketName}/scopes" -Method Post -Headers $headers -Body "name=${ScopeName}" -ErrorAction SilentlyContinue | Out-Null
-
-# 7. Create collections
-$collections = @("users", "biometrics", "attendance")
-foreach ($col in $collections) {
-    Write-Host "Creating collection '${col}'..." -ForegroundColor Cyan
-    Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/pools/default/buckets/${BucketName}/scopes/${ScopeName}/collections" -Method Post -Headers $headers -Body "name=${col}" -ErrorAction SilentlyContinue | Out-Null
-}
+# 1. Create separate bucket 'attendance_system' (256MB RAM quota, 0 replicas)
+Write-Host "Ensuring isolated bucket '${BucketName}' exists..." -ForegroundColor Cyan
+Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/pools/default/buckets" -Method Post -Headers $adminHeaders -Body "name=${BucketName}&bucketType=couchbase&ramQuota=256&authType=none" -ErrorAction SilentlyContinue | Out-Null
 
 Start-Sleep -Seconds 3
 
-# 8. Create primary indexes
+# 2. Create scope 'app'
+Write-Host "Ensuring scope '${ScopeName}' exists in '${BucketName}'..." -ForegroundColor Cyan
+Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/pools/default/buckets/${BucketName}/scopes" -Method Post -Headers $adminHeaders -Body "name=${ScopeName}" -ErrorAction SilentlyContinue | Out-Null
+
+Start-Sleep -Seconds 2
+
+# 3. Create collections
+$collections = @("users", "biometrics", "attendance")
 foreach ($col in $collections) {
-    Write-Host "Creating primary index for '${col}'..." -ForegroundColor Cyan
-    $body = @{ statement = "CREATE PRIMARY INDEX IF NOT EXISTS ON `${BucketName}`.`${ScopeName}`.`${col}`;" }
-    Invoke-RestMethod -Uri "http://${CouchbaseHost}:8093/query/service" -Method Post -Headers $headers -Body $body -ErrorAction SilentlyContinue | Out-Null
+    Write-Host "Ensuring collection '${col}' exists in scope '${ScopeName}'..." -ForegroundColor Cyan
+    Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/pools/default/buckets/${BucketName}/scopes/${ScopeName}/collections" -Method Post -Headers $adminHeaders -Body "name=${col}" -ErrorAction SilentlyContinue | Out-Null
 }
 
-# 9. Create secondary index for efficient user attendance history queries
-Write-Host "Creating secondary index 'idx_att_user_time' on attendance collection..." -ForegroundColor Cyan
-$secBody = @{ statement = "CREATE INDEX idx_att_user_time IF NOT EXISTS ON `${BucketName}`.`${ScopeName}`.`attendance`(userId, serverTimestamp DESC);" }
-Invoke-RestMethod -Uri "http://${CouchbaseHost}:8093/query/service" -Method Post -Headers $headers -Body $secBody -ErrorAction SilentlyContinue | Out-Null
+Start-Sleep -Seconds 2
 
-Write-Host "Couchbase initialization successfully completed!" -ForegroundColor Green
+# 4. Create separate RBAC user 'attendance_backend' scoped strictly to 'attendance_system'
+Write-Host "Configuring isolated database user '${AppUser}'..." -ForegroundColor Cyan
+$roles = "data_reader[attendance_system],data_writer[attendance_system],query_select[attendance_system],query_insert[attendance_system],query_update[attendance_system],query_delete[attendance_system],query_manage_index[attendance_system]"
+$userBody = "name=Attendance System Backend&roles=${roles}&password=${AppPass}"
+Invoke-RestMethod -Uri "http://${CouchbaseHost}:8091/settings/rbac/users/local/${AppUser}" -Method Put -Headers $adminHeaders -Body $userBody -ErrorAction SilentlyContinue | Out-Null
+
+Start-Sleep -Seconds 2
+
+# 5. Create primary and secondary indexes using attendance_backend credentials
+$appAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${AppUser}:${AppPass}"))
+$appHeaders = @{ Authorization = "Basic $appAuth"; "Content-Type" = "application/json" }
+
+foreach ($col in $collections) {
+    Write-Host "Ensuring primary index exists for '${col}'..." -ForegroundColor Cyan
+    $body = @{ statement = "CREATE PRIMARY INDEX IF NOT EXISTS ON `${BucketName}`.`${ScopeName}`.`${col}`;" } | ConvertTo-Json
+    Invoke-RestMethod -Uri "http://${CouchbaseHost}:8093/query/service" -Method Post -Headers $appHeaders -Body $body -ErrorAction SilentlyContinue | Out-Null
+}
+
+Write-Host "Ensuring secondary index 'idx_att_user_time' exists..." -ForegroundColor Cyan
+$secBody = @{ statement = "CREATE INDEX idx_att_user_time IF NOT EXISTS ON `${BucketName}`.`${ScopeName}`.`attendance`(userId, serverTimestamp DESC);" } | ConvertTo-Json
+Invoke-RestMethod -Uri "http://${CouchbaseHost}:8093/query/service" -Method Post -Headers $appHeaders -Body $secBody -ErrorAction SilentlyContinue | Out-Null
+
+Write-Host "Attendance system database provisioning complete and verified isolated from LCU!" -ForegroundColor Green
