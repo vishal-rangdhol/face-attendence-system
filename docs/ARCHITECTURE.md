@@ -31,7 +31,22 @@ In this personal attendance system prototype, there are no passwords, OAuth toke
 > - An actor with direct network access to the backend could theoretically craft and dispatch a `POST /api/attendance` payload directly.
 > - **Design Decision:** For this personal attendance prototype, on-device verification serves as a **local integrity and personal accountability gate**, not an adversarial anti-fraud or organizational non-repudiation mechanism. Future enterprise extensions would require server-side cryptographic attestation, hardware enclave signing, or centralized biometric matching.
 
-### 2.2 Server-Authoritative Integrity Boundaries
+### 2.3 Biometric Data Protection & Cryptographic Boundaries
+1. **Local Biometric Storage (`expo-secure-store`):**
+   - **Android:** Utilizes `AndroidKeyStore` to generate hardware-backed AES keys (where supported by the device SoC/TEE) that encrypt data in `EncryptedSharedPreferences`.
+   - **iOS:** Utilizes Apple **Keychain Services** (`kSecClassGenericPassword`, accessible after first unlock). **Note:** Standard `expo-secure-store` stores data in the Keychain; it does **NOT** use Apple's hardware Secure Enclave (`kSecAttrTokenIDSecureEnclave`).
+   - **No Plaintext Fallback:** There is zero fallback to `AsyncStorage`, `localStorage`, or plaintext files.
+   - **Deletion:** Calling `clearBiometrics()` invokes `deleteItemAsync`, permanently deleting the template from the platform keychain.
+2. **Backend Biometric Encryption at Rest (AES-256-GCM):**
+   - **Algorithm:** Authenticated AES-256-GCM with a unique 96-bit random IV and 128-bit authentication tag per document.
+   - **Key Enforcement:** Encryption key is read from `BIOMETRIC_ENCRYPTION_KEY`. Server startup fails immediately if missing or shorter than 32 characters. No fallback key exists.
+   - **Database Payload:** Couchbase stores only `encryptedEmbedding` (base64 ciphertext), `iv`, and `tag`. Plaintext biometric vectors are never persisted to disk.
+   - **API Exposure:** The backend API never returns raw biometric vectors over the network. `GET /api/biometrics/:userId` returns enrollment status metadata only (`enrolled`, `modelVersion`, `enrolledAt`, `embeddingDimension`).
+   - **Rate Limiting:** Biometric endpoints enforce strict in-memory rate limiting (10 req/min per IP) to mitigate automated enumeration.
+3. **No-Authentication Architecture Risks:**
+   - As an MVP without passwords, sessions, or OAuth tokens, any caller with direct network access knowing a user's ID (`usr_<id>`) can trigger deletion of remote biometrics, re-enroll a template, or submit attendance. This is an explicit design trade-off for personal utility prototypes.
+
+### 2.4 Server-Authoritative Integrity Boundaries
 To maintain consistency and prevent abuse within the personal model:
 1. **Server-Generated UTC Timestamps:** The client's clock is never trusted for attendance recording. The backend generates `serverTimestamp` in UTC (`toISOString()`).
 2. **Timezone-Aware Date Partitioning:** The user's configured timezone (e.g., `Asia/Kolkata`, `America/New_York`, `UTC`) is sent alongside the attendance submission (or stored in the user profile). The backend converts the UTC server timestamp to the user's local date (`YYYY-MM-DD`).
@@ -56,8 +71,8 @@ To maintain consistency and prevent abuse within the personal model:
   - Image Preprocessing: `expo-image-manipulator` crops the face bounding box and resizes it to $112 \times 112$ pixels. A lightweight pixel extractor normalizes RGB values to floating-point numbers: $(pixel - 127.5) / 128.0$.
   - Output: 128-dimensional L2-normalized float embedding.
 - **Cosine Similarity Engine:**
-  - On-device 1:1 vector dot product: $\text{similarity} = \sum_{i=0}^{127} u_i \cdot v_i$.
-  - **Configurable Threshold:** Default baseline is set to `0.88`, exposed via application configuration for experimental calibration.
+  - On-device 1:1 vector dot product: $\text{similarity} = \sum_{i=0}^{191} u_i \cdot v_i$.
+  - **Fixed Verification Threshold (0.85):** A fixed similarity threshold of `0.85` is enforced uniformly across the mobile client and backend. User threshold configuration is disabled. The 0.85 threshold serves as a permissive MVP matching threshold optimized for low false-rejection under real-world ambient conditions; it is not an adversarial guarantee against spoofing or intentional impersonation. Scores in $[0.85, 1.00]$ are accepted, while scores $< 0.85$ are rejected.
 
 ### 3.2 Backend Architecture (Bun + Hono)
 - **Runtime:** Bun 1.4+ (high-speed native TypeScript runtime).
@@ -198,7 +213,7 @@ lcu_face_attendence/
   - Face crop + $112 \times 112$ resize + RGB normalization pipeline.
   - 128-D embedding extraction, consent capture, and local/remote enrollment storage.
 - **MS4: On-Device Face Recognition & Matching Engine**
-  - Cosine similarity matching module with configurable experimental threshold (default: 0.88).
+  - Cosine similarity matching module with fixed threshold (0.85).
   - Real-time/capture verification workflow with instant visual and audio feedback.
 - **MS5: Backend Attendance API & Atomic Duplicate Prevention**
   - Endpoints for user creation, biometric synchronization/deletion, and attendance logging.

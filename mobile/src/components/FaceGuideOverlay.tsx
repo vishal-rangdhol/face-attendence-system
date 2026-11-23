@@ -65,7 +65,7 @@ export const FaceGuideOverlay: React.FC<FaceGuideOverlayProps> = ({
 const styles = StyleSheet.create({
   topContainer: {
     position: "absolute",
-    top: 50,
+    top: 96,
     left: 20,
     right: 20,
     alignItems: "center",

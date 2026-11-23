@@ -80,6 +80,7 @@ export class CouchbaseClient {
           Authorization: this.authHeader,
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(5000),
       });
     } catch (err) {
       throw new CouchbaseError(

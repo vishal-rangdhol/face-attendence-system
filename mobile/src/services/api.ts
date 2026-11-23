@@ -17,7 +17,11 @@ export class ApiClient {
   }
 
   setBaseUrl(url: string) {
-    this.baseUrl = url;
+    this.baseUrl = url.trim().replace(/\/+$/, "");
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
   }
 
   private async safeParseJson(res: Response): Promise<any> {

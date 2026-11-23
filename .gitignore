@@ -3,9 +3,11 @@ node_modules/
 .pnp/
 .pnp.js
 
-# Agent environment plugins & skills
+# Agent environment plugins, skills & rules
 /plugins/
 /skills/
+.agents/
+AGENTS.md
 
 # Production builds
 dist/
@@ -15,17 +17,23 @@ build/
 # Bun
 bun.lock
 bun.lockb
+.bun-tmp/
+.bun-temp/
 
-# Expo & React Native
+# Expo & React Native prebuild directories
+/android/
+/ios/
+/mobile/android/
+/mobile/ios/
 .expo/
-android/
-ios/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+
+# Custom local Expo modules: keep source, ignore build outputs
+mobile/modules/**/build/
+mobile/modules/**/.cxx/
+mobile/modules/**/.transforms/
+
+# Build caches & compiler artifacts
+*.tsbuildinfo
 
 # Couchbase / Docker
 couchbase-data/
@@ -49,3 +57,5 @@ yarn-error.log*
 Thumbs.db
 .vscode/
 .idea/
+*.swp
+*.swo

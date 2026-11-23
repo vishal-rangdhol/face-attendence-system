@@ -1,0 +1,10 @@
+{
+  "name": "face-camera",
+  "version": "1.0.0",
+  "description": "Continuous real-time face detection camera module for Android (CameraX + ML Kit) and iOS (AVFoundation + Apple Vision)",
+  "main": "index.ts",
+  "types": "index.ts",
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

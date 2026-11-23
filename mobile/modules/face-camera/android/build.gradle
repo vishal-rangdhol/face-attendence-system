@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.lcu.facecamera'
+version = '1.0.0'
+
+android {
+  namespace "com.lcu.facecamera"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  def camerax_version = "1.4.1"
+
+  implementation "androidx.camera:camera-core:${camerax_version}"
+  implementation "androidx.camera:camera-camera2:${camerax_version}"
+  implementation "androidx.camera:camera-lifecycle:${camerax_version}"
+  implementation "androidx.camera:camera-view:${camerax_version}"
+  implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.8.7"
+  implementation "com.google.mlkit:face-detection:16.1.7"
+}

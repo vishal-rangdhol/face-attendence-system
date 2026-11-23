@@ -38,6 +38,8 @@ export interface FaceValidationResult {
   imageUri?: string;
   imageWidth?: number;
   imageHeight?: number;
+  isLive?: boolean;
+  livenessMethod?: "blink_challenge" | "passive_gate";
   boundingBox?: FaceBoundingBox;
   angles?: {
     pitch: number;

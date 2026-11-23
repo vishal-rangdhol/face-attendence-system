@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { RegisterUserRequestSchema, UserDocument } from "../models/user";
+import { USER_ID_REGEX } from "../models/biometric";
 import { couchbase } from "../db/couchbase";
 
 export const usersRouter = new Hono();
@@ -34,15 +35,17 @@ usersRouter.post("/register", async (c) => {
     return c.json({ success: true, user: userDoc }, 201);
   } catch (err) {
     console.error("[UsersRouter] Failed to register user:", err);
-    return c.json(
-      { error: "Failed to persist user profile", details: String(err) },
-      500
-    );
+    return c.json({ error: "Failed to persist user profile" }, 500);
   }
 });
 
 usersRouter.get("/:id", async (c) => {
   const userId = c.req.param("id");
+
+  if (!USER_ID_REGEX.test(userId)) {
+    return c.json({ error: "Invalid user ID format" }, 400);
+  }
+
   const key = `usr::${userId}`;
 
   try {
@@ -53,6 +56,6 @@ usersRouter.get("/:id", async (c) => {
     return c.json({ success: true, user });
   } catch (err) {
     console.error(`[UsersRouter] Error fetching user ${userId}:`, err);
-    return c.json({ error: "Failed to retrieve user", details: String(err) }, 500);
+    return c.json({ error: "Failed to retrieve user" }, 500);
   }
 });

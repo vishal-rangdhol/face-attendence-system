@@ -4,9 +4,11 @@ import { HomeScreen } from "./src/screens/HomeScreen";
 import { RegisterScreen } from "./src/screens/RegisterScreen";
 import { EnrollmentScreen } from "./src/screens/EnrollmentScreen";
 import { VerificationScreen } from "./src/screens/VerificationScreen";
-import { HistoryScreen } from "./src/screens/PlaceholderScreens";
+import { HistoryScreen } from "./src/screens/HistoryScreen";
 import { UserProfile, ActiveScreen } from "./src/types";
 import { storageService } from "./src/services/storage";
+import { api } from "./src/services/api";
+import { CONFIG } from "./src/config";
 
 export default function App() {
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>("home");
@@ -18,7 +20,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadUser();
+    storageService.getBackendUrl(CONFIG.API_BASE_URL).then((url) => {
+      api.setBaseUrl(url);
+      loadUser();
+    });
   }, []);
 
   const handleRegisterSuccess = (newUser: UserProfile) => {
@@ -67,6 +72,7 @@ export default function App() {
         <HistoryScreen
           user={user}
           onBack={() => setActiveScreen("home")}
+          onNavigateToVerify={() => setActiveScreen("verify")}
         />
       )}
     </ScreenContainer>

@@ -1,10 +1,11 @@
 import * as SecureStore from "expo-secure-store";
-import { UserProfile, BiometricEnrollment } from "../types";
+import { UserProfile, BiometricEnrollment, AttendanceRecord } from "../types";
 
 const KEYS = {
   USER_PROFILE: "lcu_user_profile",
   ENROLLED_EMBEDDING: "lcu_enrolled_embedding",
-  CUSTOM_THRESHOLD: "lcu_custom_threshold",
+  ATTENDANCE_CACHE: "lcu_attendance_cache",
+  BACKEND_URL: "lcu_backend_url",
 };
 
 export const storageService = {
@@ -45,14 +46,33 @@ export const storageService = {
     await SecureStore.deleteItemAsync(KEYS.ENROLLED_EMBEDDING);
   },
 
-  async saveThreshold(threshold: number): Promise<void> {
-    await SecureStore.setItemAsync(KEYS.CUSTOM_THRESHOLD, threshold.toString());
+  async getCachedAttendance(): Promise<AttendanceRecord[]> {
+    const raw = await SecureStore.getItemAsync(KEYS.ATTENDANCE_CACHE);
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw) as AttendanceRecord[];
+    } catch {
+      return [];
+    }
   },
 
-  async getThreshold(defaultThreshold: number): Promise<number> {
-    const raw = await SecureStore.getItemAsync(KEYS.CUSTOM_THRESHOLD);
-    if (!raw) return defaultThreshold;
-    const val = parseFloat(raw);
-    return isNaN(val) ? defaultThreshold : val;
+  async saveCachedAttendance(records: AttendanceRecord[]): Promise<void> {
+    await SecureStore.setItemAsync(KEYS.ATTENDANCE_CACHE, JSON.stringify(records));
+  },
+
+  async appendCachedAttendance(record: AttendanceRecord): Promise<void> {
+    const existing = await this.getCachedAttendance();
+    const filtered = existing.filter((r) => r.id !== record.id && r.date !== record.date);
+    const updated = [record, ...filtered];
+    await this.saveCachedAttendance(updated);
+  },
+
+  async getBackendUrl(defaultUrl: string): Promise<string> {
+    const raw = await SecureStore.getItemAsync(KEYS.BACKEND_URL);
+    return raw?.trim() || defaultUrl;
+  },
+
+  async saveBackendUrl(url: string): Promise<void> {
+    await SecureStore.setItemAsync(KEYS.BACKEND_URL, url.trim());
   },
 };

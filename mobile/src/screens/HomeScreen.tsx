@@ -1,8 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  TextInput,
+} from "react-native";
 import { UserProfile, ActiveScreen } from "../types";
 import { storageService } from "../services/storage";
 import { api } from "../services/api";
+import { CONFIG } from "../config";
 
 interface HomeScreenProps {
   onNavigate: (screen: ActiveScreen) => void;
@@ -13,9 +23,17 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate, user, onRefreshUser }) => {
   const [backendStatus, setBackendStatus] = useState<"checking" | "online" | "offline">("checking");
   const [couchbaseOk, setCouchbaseOk] = useState<boolean>(false);
+  const [currentUrl, setCurrentUrl] = useState<string>(api.getBaseUrl());
+  const [showUrlModal, setShowUrlModal] = useState<boolean>(false);
+  const [inputUrl, setInputUrl] = useState<string>("");
+  const [isDeletingBio, setIsDeletingBio] = useState<boolean>(false);
 
   useEffect(() => {
-    checkHealth();
+    storageService.getBackendUrl(CONFIG.API_BASE_URL).then((url) => {
+      api.setBaseUrl(url);
+      setCurrentUrl(url);
+      checkHealth();
+    });
   }, []);
 
   const checkHealth = async () => {
@@ -30,27 +48,114 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate, user, onRefr
     }
   };
 
+  const handleOpenUrlModal = () => {
+    setInputUrl(currentUrl);
+    setShowUrlModal(true);
+  };
+
+  const handleSaveUrl = async () => {
+    const trimmed = inputUrl.trim();
+    if (!trimmed) {
+      Alert.alert("Invalid URL", "Please enter a valid HTTP/HTTPS URL.");
+      return;
+    }
+    api.setBaseUrl(trimmed);
+    await storageService.saveBackendUrl(trimmed);
+    setCurrentUrl(trimmed);
+    setShowUrlModal(false);
+    checkHealth();
+  };
+
+  const handleResetUrl = async () => {
+    const defaultUrl = CONFIG.API_BASE_URL;
+    api.setBaseUrl(defaultUrl);
+    await storageService.saveBackendUrl(defaultUrl);
+    setCurrentUrl(defaultUrl);
+    setShowUrlModal(false);
+    checkHealth();
+  };
+
+  const handleRemoveBiometrics = () => {
+    if (!user) return;
+
+    Alert.alert(
+      "Remove Face Biometrics",
+      "Are you sure you want to delete your enrolled face biometrics?\n\n• Your remote and local face templates will be permanently deleted.\n• Your user profile and attendance history will NOT be deleted.\n• You will need to re-enroll your face before marking attendance again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove Biometrics",
+          style: "destructive",
+          onPress: async () => {
+            setIsDeletingBio(true);
+            try {
+              // 1. Delete remote biometric template from Couchbase
+              await api.deleteBiometrics(user.id);
+            } catch (err: any) {
+              Alert.alert(
+                "Deletion Failed",
+                err.message || "Failed to remove biometrics from backend. Please check your connection and try again."
+              );
+              setIsDeletingBio(false);
+              return;
+            }
+
+            try {
+              // 2. Clear local biometric embedding from SecureStore
+              await storageService.clearBiometrics();
+
+              // 3. Update local user profile flag (preserving name, id, timezone, and attendance history)
+              const updatedUser: UserProfile = { ...user, hasBiometrics: false };
+              await storageService.saveUserProfile(updatedUser);
+
+              onRefreshUser();
+              Alert.alert("Success", "Your face biometrics have been permanently removed.");
+            } catch (localErr: any) {
+              Alert.alert(
+                "Partial Deletion Warning",
+                "Remote biometric template was deleted, but clearing local secure storage failed: " +
+                  (localErr.message || "Unknown local storage error.")
+              );
+            } finally {
+              setIsDeletingBio(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
-      {/* Backend Status Badge */}
-      <View style={styles.statusRow}>
-        <View style={styles.statusIndicator}>
-          <View
-            style={[
-              styles.dot,
-              {
-                backgroundColor:
-                  backendStatus === "online" ? "#22C55E" : backendStatus === "checking" ? "#EAB308" : "#EF4444",
-              },
-            ]}
-          />
-          <Text style={styles.statusText}>
-            Backend: {backendStatus.toUpperCase()} {couchbaseOk ? "(DB Connected)" : ""}
-          </Text>
+      {/* Backend Status Badge & Config */}
+      <View style={styles.statusContainer}>
+        <View style={styles.statusRow}>
+          <View style={styles.statusIndicator}>
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor:
+                    backendStatus === "online" ? "#22C55E" : backendStatus === "checking" ? "#EAB308" : "#EF4444",
+                },
+              ]}
+            />
+            <Text style={styles.statusText}>
+              Backend: {backendStatus.toUpperCase()} {couchbaseOk ? "(DB Connected)" : ""}
+            </Text>
+          </View>
+          <View style={styles.statusActionRow}>
+            <TouchableOpacity onPress={handleOpenUrlModal} style={styles.configBtn}>
+              <Text style={styles.configBtnText}>⚙ URL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={checkHealth} style={styles.refreshBtn}>
+              <Text style={styles.refreshBtnText}>Check</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <TouchableOpacity onPress={checkHealth} style={styles.refreshBtn}>
-          <Text style={styles.refreshBtnText}>Check</Text>
-        </TouchableOpacity>
+        <Text style={styles.urlSubtext} numberOfLines={1}>
+          Endpoint: {currentUrl}
+        </Text>
       </View>
 
       {/* User Status Card */}
@@ -110,8 +215,71 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigate, user, onRefr
           >
             <Text style={styles.secondaryBtnText}>View Attendance History</Text>
           </TouchableOpacity>
+
+          {user.hasBiometrics && (
+            <TouchableOpacity
+              style={styles.removeBioBtn}
+              onPress={handleRemoveBiometrics}
+              disabled={isDeletingBio}
+            >
+              {isDeletingBio ? (
+                <ActivityIndicator size="small" color="#EF4444" />
+              ) : (
+                <Text style={styles.removeBioBtnText}>Remove Face Biometrics</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       )}
+
+      {/* Server URL Configuration Modal */}
+      <Modal
+        visible={showUrlModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUrlModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Backend API Configuration</Text>
+            <Text style={styles.modalSubtitle}>
+              Enter the backend URL (e.g. your PC's LAN IP or ngrok/tethering address):
+            </Text>
+
+            <TextInput
+              style={styles.modalInput}
+              value={inputUrl}
+              onChangeText={setInputUrl}
+              placeholder="http://192.168.0.7:3000"
+              placeholderTextColor="#64748B"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowUrlModal(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalResetBtn}
+                onPress={handleResetUrl}
+              >
+                <Text style={styles.modalResetBtnText}>Default</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                onPress={handleSaveUrl}
+              >
+                <Text style={styles.modalSaveBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Footer Info */}
       <View style={styles.footer}>
@@ -128,15 +296,41 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "space-between",
   },
+  statusContainer: {
+    backgroundColor: "#1E293B",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
   statusRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#1E293B",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+  },
+  statusActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  configBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: "#0F172A",
+  },
+  configBtnText: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  urlSubtext: {
+    color: "#64748B",
+    fontSize: 11,
+    fontFamily: "monospace",
+    marginTop: 4,
   },
   statusIndicator: {
     flexDirection: "row",
@@ -247,6 +441,95 @@ const styles = StyleSheet.create({
   secondaryBtnText: {
     color: "#CBD5E1",
     fontSize: 15,
+    fontWeight: "600",
+  },
+  removeBioBtn: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "#EF4444",
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  removeBioBtnText: {
+    color: "#F87171",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    width: "100%",
+    backgroundColor: "#1E293B",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#F8FAFC",
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: "#94A3B8",
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  modalInput: {
+    backgroundColor: "#0F172A",
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#F8FAFC",
+    fontSize: 14,
+    fontFamily: "monospace",
+    marginBottom: 16,
+  },
+  modalBtnRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  modalCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+  },
+  modalCancelBtnText: {
+    color: "#94A3B8",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalResetBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 6,
+    backgroundColor: "#334155",
+  },
+  modalResetBtnText: {
+    color: "#CBD5E1",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalSaveBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    backgroundColor: "#2563EB",
+  },
+  modalSaveBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "600",
   },
   footer: {

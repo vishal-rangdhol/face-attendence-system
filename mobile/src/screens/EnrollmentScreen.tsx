@@ -7,10 +7,16 @@ import {
   ScrollView,
   Image,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Header } from "../components/Header";
 import { CameraCaptureView } from "../components/CameraCaptureView";
 import { UserProfile, FaceValidationResult } from "../types";
+import { CONFIG } from "../config";
+import { storageService } from "../services/storage";
+import { api } from "../services/api";
+import { extractFaceEmbedding } from "../services/faceRecognition";
+import * as FileSystem from "expo-file-system";
 
 interface EnrollmentScreenProps {
   user: UserProfile | null;
@@ -26,6 +32,84 @@ export const EnrollmentScreen: React.FC<EnrollmentScreenProps> = ({
   const [consentGranted, setConsentGranted] = useState<boolean>(false);
   const [showCamera, setShowCamera] = useState<boolean>(false);
   const [validatedFace, setValidatedFace] = useState<FaceValidationResult | null>(null);
+  const [isEnrolling, setIsEnrolling] = useState<boolean>(false);
+
+  const deleteTempImage = (uri?: string | null) => {
+    if (uri && (uri.startsWith("file://") || uri.startsWith("/"))) {
+      FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+    }
+  };
+
+  const handleConfirmEnrollment = async () => {
+    if (!user) {
+      Alert.alert("Error", "No user profile found.");
+      return;
+    }
+    if (!validatedFace || !validatedFace.imageUri) {
+      Alert.alert("Error", "No validated face image available for enrollment.");
+      return;
+    }
+    if (!consentGranted) {
+      Alert.alert("Consent Required", "Please review and accept the biometric consent agreement before enrolling.");
+      return;
+    }
+
+    setIsEnrolling(true);
+    try {
+      // 1. Generate 128-D L2-normalized embedding via MobileFaceNet TFLite
+      const embedding = await extractFaceEmbedding(
+        validatedFace.imageUri,
+        validatedFace.boundingBox,
+        validatedFace.imageWidth,
+        validatedFace.imageHeight
+      );
+
+      // 2. Persist in local secure storage
+      const enrollmentData = {
+        userId: user.id,
+        embedding,
+        embeddingDimension: embedding.length,
+        modelVersion: CONFIG.MODEL.MODEL_VERSION,
+        enrolledAt: new Date().toISOString(),
+      };
+      await storageService.saveEnrolledEmbedding(enrollmentData);
+
+      // 3. Sync to backend Couchbase database
+      let backendSynced = false;
+      try {
+        await api.enrollBiometrics(user.id, embedding, true);
+        backendSynced = true;
+      } catch (err: any) {
+        console.warn("Backend biometric sync failed:", err.message);
+      }
+
+      // 4. Update local user profile
+      const updatedUser = { ...user, hasBiometrics: true };
+      await storageService.saveUserProfile(updatedUser);
+
+      Alert.alert(
+        "Enrollment Successful",
+        backendSynced
+          ? `Your face template (${embedding.length}-D vector) has been securely extracted and synced with the backend database.`
+          : `Your face template (${embedding.length}-D vector) has been securely stored locally. (Backend was unreachable; template will be used for on-device matching).`,
+        [
+          {
+            text: "Proceed",
+            onPress: () => {
+              deleteTempImage(validatedFace?.imageUri);
+              if (onEnrollmentComplete) onEnrollmentComplete();
+              else onBack();
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      deleteTempImage(validatedFace?.imageUri);
+      Alert.alert("Enrollment Failed", err.message || "Failed to generate face embedding.");
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
 
   if (!user) {
     return (
@@ -47,6 +131,7 @@ export const EnrollmentScreen: React.FC<EnrollmentScreenProps> = ({
   if (showCamera) {
     return (
       <CameraCaptureView
+        mode="enrollment"
         instructionTitle="Enrollment: Face Capture"
         onCancel={() => setShowCamera(false)}
         onValidatedCapture={(result) => {
@@ -142,27 +227,39 @@ export const EnrollmentScreen: React.FC<EnrollmentScreenProps> = ({
           </View>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowCamera(true)}>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => {
+                deleteTempImage(validatedFace?.imageUri);
+                setValidatedFace(null);
+                setShowCamera(true);
+              }}
+            >
               <Text style={styles.secondaryBtnText}>Retake Photo</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => {
-                Alert.alert(
-                  "Milestone 2 Verified",
-                  "Face positioning and ML Kit detection validation completed! MobileFaceNet embedding generation will run in Milestone 3.",
-                  [{ text: "OK", onPress: onBack }]
-                );
-              }}
+              style={[styles.primaryBtn, isEnrolling && styles.disabledBtn]}
+              onPress={handleConfirmEnrollment}
+              disabled={isEnrolling}
             >
-              <Text style={styles.primaryBtnText}>Confirm Capture</Text>
+              {isEnrolling ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.primaryBtnText}>Confirm & Enroll Template</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      <TouchableOpacity style={styles.backLink} onPress={onBack}>
+      <TouchableOpacity
+        style={styles.backLink}
+        onPress={() => {
+          deleteTempImage(validatedFace?.imageUri);
+          onBack();
+        }}
+      >
         <Text style={styles.backLinkText}>← Back to Home</Text>
       </TouchableOpacity>
     </ScrollView>

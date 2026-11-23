@@ -1,3 +1,21 @@
+function getValidatedBiometricKey(): string {
+  const key = process.env.BIOMETRIC_ENCRYPTION_KEY?.trim();
+  if (!key) {
+    throw new Error(
+      "FATAL: BIOMETRIC_ENCRYPTION_KEY environment variable is missing. " +
+      "It is required to encrypt biometric templates at rest using AES-256-GCM. " +
+      "Generate a secure 32-byte (256-bit) secret with: openssl rand -hex 32"
+    );
+  }
+  if (key.length < 32) {
+    throw new Error(
+      `FATAL: BIOMETRIC_ENCRYPTION_KEY is too short (${key.length} characters). ` +
+      "It must be at least 32 characters long to ensure cryptographic security."
+    );
+  }
+  return key;
+}
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   couchbase: {
@@ -10,6 +28,9 @@ export const config = {
     scope: process.env.COUCHBASE_SCOPE || "app",
   },
   thresholds: {
-    defaultSimilarity: Number(process.env.DEFAULT_SIMILARITY_THRESHOLD || 0.88),
+    defaultSimilarity: Number(process.env.DEFAULT_SIMILARITY_THRESHOLD || 0.85),
+  },
+  security: {
+    biometricKey: getValidatedBiometricKey(),
   },
 };

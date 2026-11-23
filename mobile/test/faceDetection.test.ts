@@ -8,7 +8,7 @@ describe("Face Detection Quality Gate Rules", () => {
     expect(limits.MAX_PITCH_DEG).toBe(15);
     expect(limits.MAX_YAW_DEG).toBe(15);
     expect(limits.MAX_ROLL_DEG).toBe(10);
-    expect(limits.MIN_FACE_AREA_RATIO).toBe(0.20);
+    expect(limits.MIN_FACE_AREA_RATIO).toBe(0.12);
     expect(limits.MIN_EYE_OPEN_PROBABILITY).toBe(0.5);
   });
 
